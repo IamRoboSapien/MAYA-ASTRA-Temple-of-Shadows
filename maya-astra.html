@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAYA-ASTRA: Temple of Shadows</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  body {
+    background: #0a0705;
+    color: #f4e4c1;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  #hud {
+    width: 900px;
+    max-width: 96vw;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 18px;
+    background: linear-gradient(90deg, #1b1108, #2b1a0c, #1b1108);
+    border: 1px solid #8a5a24;
+    border-bottom: none;
+    border-radius: 10px 10px 0 0;
+  }
+  .title-block h1 {
+    font-size: 1.15rem;
+    letter-spacing: 2px;
+    color: #ffb84d;
+    text-shadow: 0 0 10px rgba(255, 165, 0, 0.5);
+  }
+  .stats { display: flex; gap: 18px; align-items: center; font-weight: 600; font-size: 0.95rem; }
+  .stat-pill {
+    background: rgba(0,0,0,0.45);
+    padding: 5px 12px;
+    border-radius: 20px;
+    border: 1px solid #5c3a16;
+  }
+  #pulseBtn {
+    background: linear-gradient(135deg, #00b4d8, #0077b6);
+    color: #fff;
+    border: 1px solid #90e0ef;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 0 12px rgba(0, 180, 216, 0.5);
+    transition: transform 0.15s;
+  }
+  #pulseBtn:hover:not(:disabled) { transform: scale(1.05); }
+  #pulseBtn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+  #gameWrap {
+    position: relative;
+    width: 900px;
+    max-width: 96vw;
+    aspect-ratio: 16 / 9;
+    border: 2px solid #8a5a24;
+    border-radius: 0 0 10px 10px;
+    overflow: hidden;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.85);
+  }
+  canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+  #relicBar {
+    width: 900px;
+    max-width: 96vw;
+    margin-top: 10px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .relic-chip {
+    padding: 6px 14px;
+    border-radius: 6px;
+    background: #1a120b;
+    border: 1px solid #4d3319;
+    font-size: 0.85rem;
+    color: #d4b483;
+    transition: all 0.3s;
+  }
+  .relic-chip.found {
+    background: #2e220d;
+    border-color: #ffb84d;
+    color: #ffd166;
+    text-decoration: line-through;
+    opacity: 0.65;
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(10, 7, 5, 0.88);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    z-index: 10;
+  }
+  #overlay h2 { font-size: 2rem; color: #ffb84d; letter-spacing: 3px; margin-bottom: 10px; }
+  #overlay p { max-width: 560px; line-height: 1.5; color: #e0c9a6; margin-bottom: 20px; }
+  #startBtn {
+    background: linear-gradient(135deg, #f59e0b, #b45309);
+    color: #fff;
+    border: 1px solid #fcd34d;
+    padding: 12px 30px;
+    font-size: 1.05rem;
+    font-weight: bold;
+    letter-spacing: 1.5px;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.5);
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div class="title-block">
+    <h1>MAYA-ASTRA: TEMPLE OF SHADOWS</h1>
+  </div>
+  <div class="stats">
+    <div class="stat-pill" id="chamberTxt">Chamber 1/3</div>
+    <div class="stat-pill" id="timerTxt">⏱ 60s</div>
+    <div class="stat-pill" id="scoreTxt">✨ 0</div>
+    <button id="pulseBtn">👁️ Mantra Pulse (2)</button>
+  </div>
+</div>
+
+<div id="gameWrap">
+  <canvas id="c" width="900" height="506"></canvas>
+  <div id="overlay">
+    <h2>MAYA-ASTRA: TEMPLE OF SHADOWS</h2>
+    <p>Move your <b>Agni-Lantern</b> across the dark sandstone sanctum (hold click to flare brighter). Spot the hidden celestial <b>Astras</b> camouflaged in the temple carvings while avoiding cursed purple shadow glyphs. Press <b>Space</b> or click <b>Mantra Pulse</b> to send a Third-Eye wave.</p>
+    <button id="startBtn">ENTER THE TEMPLE</button>
+  </div>
+</div>
+
+<div id="relicBar"></div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+const pulseBtn = document.getElementById('pulseBtn');
+const relicBar = document.getElementById('relicBar');
+
+let state = 'menu';
+let chamber = 1;
+let score = 0;
+let timeLeft = 60;
+let pulses = 2;
+let flare = false;
+let curseTimer = 0;
+let pulseWave = null;
+let pointer = { x: 450, y: 253 };
+let relics = [];
+let traps = [];
+let particles = [];
+let timerInterval = null;
+
+const RELIC_TYPES = [
+  { id: 'chakra', name: 'Sudarshana Chakra', color: '#ff9e00' },
+  { id: 'trishul', name: 'Shiva Trishul', color: '#ffd166' },
+  { id: 'lotus', name: 'Padma Lotus Seal', color: '#ff70a6' },
+  { id: 'vajra', name: 'Indra Vajra', color: '#4cc9f0' },
+  { id: 'shankha', name: 'Divine Shankha', color: '#f8f9fa' },
+  { id: 'yantra', name: 'Surya Yantra', color: '#fb8500' }
+];
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playTone(freq, type = 'sine', dur = 0.25) {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(); osc.stop(audioCtx.currentTime + dur);
+}
+
+function setupChamber(lvl) {
+  chamber = lvl;
+  timeLeft = Math.max(40, 65 - lvl * 5);
+  pulses = 2;
+  curseTimer = 0;
+  pulseWave = null;
+  relics = [];
+  traps = [];
+
+  const count = 3 + lvl;
+  const pool = [...RELIC_TYPES].sort(() => Math.random() - 0.5).slice(0, count);
+
+  pool.forEach(item => {
+    let pos = findSafeSpot(relics, 75);
+    relics.push({ ...item, x: pos.x, y: pos.y, found: false, r: 22 });
+  });
+
+  for (let i = 0; i < 2 + lvl; i++) {
+    let pos = findSafeSpot([...relics, ...traps], 65);
+    traps.push({ x: pos.x, y: pos.y, r: 20 });
+  }
+
+  renderRelicBar();
+  updateHUD();
+}
+
+function findSafeSpot(existing, minDist) {
+  for (let tries = 0; tries < 100; tries++) {
+    const x = 90 + Math.random() * 720;
+    const y = 75 + Math.random() * 355;
+    if (existing.every(e => Math.hypot(e.x - x, e.y - y) > minDist)) return { x, y };
+  }
+  return { x: 450, y: 250 };
+}
+
+function renderRelicBar() {
+  relicBar.innerHTML = '';
+  relics.forEach(r => {
+    const div = document.createElement('div');
+    div.className = 'relic-chip' + (r.found ? ' found' : '');
+    div.textContent = r.name;
+    relicBar.appendChild(div);
+  });
+}
+
+function updateHUD() {
+  document.getElementById('chamberTxt').textContent = `Chamber ${chamber}/3`;
+  document.getElementById('timerTxt').textContent = `⏱ ${timeLeft}s`;
+  document.getElementById('scoreTxt').textContent = `✨ ${score}`;
+  pulseBtn.textContent = `👁️ Mantra Pulse (${pulses})`;
+  pulseBtn.disabled = pulses <= 0 || state !== 'play';
+}
+
+function triggerPulse() {
+  if (pulses <= 0 || state !== 'play') return;
+  const target = relics.find(r => !r.found);
+  if (!target) return;
+  pulses--;
+  pulseWave = { x: pointer.x, y: pointer.y, radius: 10, target };
+  playTone(528, 'triangle', 0.6);
+  updateHUD();
+}
+
+function drawBackground() {
+  ctx.fillStyle = '#1c1209';
+  ctx.fillRect(0, 0, 900, 506);
+
+  // Carved sandstone mandala pattern
+  ctx.strokeStyle = 'rgba(168, 114, 52, 0.22)';
+  ctx.lineWidth = 1.5;
+  for (let gx = 150; gx <= 750; gx += 300) {
+    for (let gy = 140; gy <= 380; gy += 220) {
+      for (let rad = 25; rad <= 95; rad += 22) {
+        ctx.beginPath();
+        ctx.arc(gx, gy, rad, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
+        ctx.beginPath();
+        ctx.moveTo(gx + Math.cos(a) * 20, gy + Math.sin(a) * 20);
+        ctx.lineTo(gx + Math.cos(a) * 100, gy + Math.sin(a) * 100);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Temple pillars
+  [45, 855].forEach(px => {
+    ctx.fillStyle = '#291a0d';
+    ctx.fillRect(px - 22, 0, 44, 506);
+    ctx.strokeStyle = '#6b441e';
+    ctx.strokeRect(px - 22, 0, 44, 506);
+  });
+}
+
+function drawRelic(r) {
+  ctx.save();
+  ctx.translate(r.x, r.y);
+  ctx.strokeStyle = r.found ? r.color : 'rgba(218, 165, 92, 0.55)';
+  ctx.fillStyle = r.found ? r.color : 'rgba(218, 165, 92, 0.25)';
+  ctx.lineWidth = 2.2;
+
+  if (r.id === 'chakra') {
+    ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.stroke();
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * 19, Math.sin(a) * 19); ctx.stroke();
+    }
+  } else if (r.id === 'trishul') {
+    ctx.beginPath();
+    ctx.moveTo(0, -19); ctx.lineTo(0, 19);
+    ctx.moveTo(-10, -8); ctx.quadraticCurveTo(-10, -18, 0, -14);
+    ctx.moveTo(10, -8); ctx.quadraticCurveTo(10, -18, 0, -14);
+    ctx.stroke();
+  } else if (r.id === 'lotus') {
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.ellipse(i * 4, 0, 5, 14, i * 0.25, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  } else if (r.id === 'vajra') {
+    ctx.beginPath();
+    ctx.moveTo(-6, -16); ctx.lineTo(6, -4); ctx.lineTo(-4, 2); ctx.lineTo(6, 16);
+    ctx.stroke();
+  } else if (r.id === 'shankha') {
+    ctx.beginPath();
+    for (let a = 0; a < Math.PI * 4; a += 0.3) {
+      const rad = a * 1.4;
+      ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+    }
+    ctx.stroke();
+  } else {
+    ctx.strokeRect(-11, -11, 22, 22);
+    ctx.save(); ctx.rotate(Math.PI / 4); ctx.strokeRect(-11, -11, 22, 22); ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawTraps() {
+  traps.forEach(t => {
+    ctx.save();
+    ctx.translate(t.x, t.y);
+    ctx.strokeStyle = 'rgba(157, 78, 221, 0.45)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -14); ctx.lineTo(13, 10); ctx.lineTo(-13, 10); ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+
+function loop() {
+  drawBackground();
+  drawTraps();
+  relics.forEach(drawRelic);
+
+  // Darkness mask with Agni-Lantern cutout
+  const baseR = curseTimer > 0 ? 55 : (flare ? 145 : 95);
+  const flicker = Math.sin(Date.now() * 0.015) * 4;
+  const radius = baseR + flicker;
+
+  ctx.save();
+  const grad = ctx.createRadialGradient(pointer.x, pointer.y, radius * 0.2, pointer.x, pointer.y, radius);
+  grad.addColorStop(0, 'rgba(255, 190, 90, 0.14)');
+  grad.addColorStop(0.75, 'rgba(10, 7, 5, 0.72)');
+  grad.addColorStop(1, 'rgba(6, 4, 2, 0.97)');
+
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 900, 506);
+  ctx.restore();
+
+  // Third-Eye Mantra Pulse wave
+  if (pulseWave) {
+    pulseWave.radius += 12;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.75)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(pulseWave.x, pulseWave.y, pulseWave.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Highlight target relic
+    ctx.strokeStyle = '#00f5d4';
+    ctx.beginPath();
+    ctx.arc(pulseWave.target.x, pulseWave.target.y, 28 + Math.sin(Date.now() * 0.02) * 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    if (pulseWave.radius > 950) pulseWave = null;
+  }
+
+  // Particles
+  particles.forEach((p, idx) => {
+    p.x += p.vx; p.y += p.vy; p.life--;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, 3, 3);
+    if (p.life <= 0) particles.splice(idx, 1);
+  });
+
+  if (curseTimer > 0) curseTimer--;
+  requestAnimationFrame(loop);
+}
+
+canvas.addEventListener('pointermove', e => {
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((e.clientX - rect.left) / rect.width) * 900;
+  pointer.y = ((e.clientY - rect.top) / rect.height) * 506;
+});
+canvas.addEventListener('pointerdown', e => {
+  flare = true;
+  if (state !== 'play') return;
+  const rect = canvas.getBoundingClientRect();
+  const cx = ((e.clientX - rect.left) / rect.width) * 900;
+  const cy = ((e.clientY - rect.top) / rect.height) * 506;
+
+  // Check relics
+  for (let r of relics) {
+    if (!r.found && Math.hypot(r.x - cx, r.y - cy) < r.r + 10) {
+      r.found = true;
+      score += 150 + timeLeft * 2;
+      playTone(660, 'sine', 0.3);
+      for (let i = 0; i < 18; i++) {
+        particles.push({ x: r.x, y: r.y, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, life: 30, color: '#ffd166' });
+      }
+      renderRelicBar();
+      updateHUD();
+      if (relics.every(item => item.found)) {
+        if (chamber < 3) {
+          setupChamber(chamber + 1);
+        } else {
+          endGame(true);
+        }
+      }
+      return;
+    }
+  }
+
+  // Check cursed traps
+  for (let t of traps) {
+    if (Math.hypot(t.x - cx, t.y - cy) < t.r + 6) {
+      curseTimer = 180;
+      timeLeft = Math.max(1, timeLeft - 4);
+      playTone(130, 'sawtooth', 0.35);
+      updateHUD();
+      return;
+    }
+  }
+});
+window.addEventListener('pointerup', () => flare = false);
+window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); triggerPulse(); } });
+pulseBtn.addEventListener('click', triggerPulse);
+
+function endGame(won) {
+  state = 'over';
+  clearInterval(timerInterval);
+  overlay.style.display = 'flex';
+  overlay.querySelector('h2').textContent = won ? 'SANCTUM UNLOCKED!' : 'CHAMBER SEALED';
+  overlay.querySelector('p').textContent = won
+    ? `You recovered all celestial Astras across the Temple of Shadows! Final Score: ${score}`
+    : `The stone doors closed before all Astras were found. Final Score: ${score}`;
+  startBtn.textContent = 'PLAY AGAIN';
+  updateHUD();
+}
+
+startBtn.addEventListener('click', () => {
+  score = 0;
+  state = 'play';
+  overlay.style.display = 'none';
+  setupChamber(1);
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    updateHUD();
+    if (timeLeft <= 0) endGame(false);
+  }, 1000);
+});
+
+loop();
+</script>
+</body>
+</html>
